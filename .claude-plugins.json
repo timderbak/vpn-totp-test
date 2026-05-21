@@ -1,0 +1,81 @@
+{
+  "$schema": "https://docs.anthropic.com/claude-code/plugins.json",
+  "description": "Plugins this template defers to. Install once via ./scripts/install-plugins.sh. See README.md for what each plugin does and when it kicks in.",
+  "plugins": [
+    {
+      "name": "superpowers",
+      "required": true,
+      "purpose": "task-level discipline: brainstorming, writing-plans, executing-plans, test-driven-development, dispatching-parallel-agents, verification-before-completion, systematic-debugging"
+    },
+    {
+      "name": "gsd",
+      "required": true,
+      "purpose": "OPTIONAL by default — used only for multi-phase projects. Provides phase lifecycle: gsd-new-project, gsd-new-milestone, gsd-spec-phase, gsd-plan-phase, gsd-execute-phase, gsd-verify-work, gsd-ship. Installed via npx (not a Claude marketplace plugin)."
+    },
+    {
+      "name": "claude-mem",
+      "required": true,
+      "purpose": "memory between sessions: mem-search ('did we solve this before?'), make-plan, do"
+    },
+    {
+      "name": "context-mode",
+      "required": true,
+      "purpose": "context-window protection: ctx_batch_execute / ctx_execute / ctx_search intercept large Bash outputs (see CLAUDE.md §8)"
+    },
+    {
+      "name": "context7",
+      "required": true,
+      "purpose": "fresh library docs (FastAPI, Next.js, Tailwind, etc.) — used when hitting a library bug (CLAUDE.md §6 stop-rule)"
+    },
+    {
+      "name": "reflexion",
+      "required": true,
+      "purpose": "multi-perspective critique after a large feature — catches what verification missed (CLAUDE.md §2 table)"
+    },
+    {
+      "name": "github",
+      "required": true,
+      "purpose": "gh operations from chat: PR, issues, branches"
+    },
+    {
+      "name": "frontend-design",
+      "required": true,
+      "purpose": "design-system + UI components with intentional aesthetics. Used at the feature design stage for HTML mockups BEFORE coding the backend (CLAUDE.md §3)"
+    },
+    {
+      "name": "vercel",
+      "required": true,
+      "purpose": "Vercel deploy + AI SDK + Next.js + shadcn skills. Front-end deployment + AI app scaffolding. See CLAUDE.md §10"
+    },
+    {
+      "name": "railway",
+      "required": true,
+      "purpose": "Backend + Postgres in one click. Default PaaS for full-stack MVP (CLAUDE.md §10)"
+    },
+    {
+      "name": "supabase",
+      "required": false,
+      "purpose": "Managed Postgres + Auth + Storage. Install if you pick Supabase as the backing store"
+    },
+    {
+      "name": "neon",
+      "required": false,
+      "purpose": "Serverless Postgres with branching. Great for Vercel + Next.js MVP"
+    },
+    {
+      "name": "prisma",
+      "required": false,
+      "purpose": "ORM + Prisma Postgres. Install if you want a typed DB layer"
+    },
+    {
+      "name": "auth0",
+      "required": false,
+      "purpose": "Managed authentication. Install if you don't use Supabase Auth and need OAuth/SSO"
+    },
+    {
+      "name": "ui-ux-pro-max",
+      "required": false,
+      "purpose": "67 styles, 96 palettes, 57 font pairings, 25 chart types — when frontend-design is not enough"
+    }
+  ]
+}
