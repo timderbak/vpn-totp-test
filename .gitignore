@@ -13,3 +13,12 @@ venv/
 .coverage
 .pytest_cache/
 .ruff_cache/
+
+# Generated certificates — never commit private keys.
+*.pem
+*.key
+
+# admin panel
+admin/__pycache__/
+admin/**/__pycache__/
+admin/.pytest_cache/

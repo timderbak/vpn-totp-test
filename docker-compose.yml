@@ -1,0 +1,59 @@
+services:
+  ocserv:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ocserv-totp-lab:latest
+    container_name: ocserv
+    hostname: ocserv
+
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+
+    ports:
+      - "4443:443/tcp"
+      - "4443:443/udp"
+
+    env_file:
+      - users.env
+
+    volumes:
+      - ocserv-ssl:/etc/ocserv/ssl
+      - ocserv-home:/home
+      - ocserv-control:/etc/ocserv/control
+
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    image: ocserv-admin:latest
+    container_name: ocserv-admin
+    hostname: ocserv-admin
+
+    ports:
+      - "8443:8443/tcp"
+
+    env_file:
+      - .env
+
+    volumes:
+      - ocserv-home:/home
+      - ocserv-control:/etc/ocserv/control
+      - admin-data:/var/lib/admin
+      - admin-ssl:/etc/admin/ssl
+
+    depends_on:
+      - ocserv
+
+    restart: unless-stopped
+
+volumes:
+  ocserv-ssl:
+  ocserv-home:
+  ocserv-control:
+  admin-data:
+  admin-ssl:
