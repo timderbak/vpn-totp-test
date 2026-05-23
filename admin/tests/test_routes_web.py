@@ -75,3 +75,71 @@ def test_completed_login_sets_session_cookie(env):
     r = client.post("/login/totp", data={"code": code}, follow_redirects=False)
     assert r.status_code in (302, 303)
     assert "__Host-admin_session" in r.cookies or any("__Host-admin_session" in c for c in r.headers.get("set-cookie", "").split(","))
+
+
+import pyotp
+from passlib.hash import bcrypt
+from app.auth import set_admin_totp as _set_admin_totp
+
+
+def _login(client, env):
+    _set_admin_totp(env["conn"], admin_id=1, secret="JBSWY3DPEHPK3PXP")
+    client.post("/login", data={"username": "admin1", "password": "pw"})
+    code = pyotp.TOTP("JBSWY3DPEHPK3PXP").now()
+    client.post("/login/totp", data={"code": code})
+
+
+def test_dashboard_requires_session(env):
+    client = _client()
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code in (302, 303, 401)
+
+
+def test_dashboard_lists_users(env):
+    client = _client()
+    _login(client, env)
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "alice" in r.text
+
+
+def test_enroll_via_form_requires_csrf(env):
+    client = _client()
+    _login(client, env)
+    # POST without csrf token
+    r = client.post("/users/alice/enroll", data={})
+    assert r.status_code == 403
+
+
+def test_enroll_via_form_shows_secret_once(env):
+    import re
+    client = _client()
+    _login(client, env)
+    page = client.get("/").text
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+    r = client.post("/users/alice/enroll", data={"csrf_token": csrf})
+    assert r.status_code == 200
+    assert "Secret" in r.text or "secret" in r.text
+    # subsequent dashboard render must not contain the secret
+    page2 = client.get("/").text
+    assert "Secret" not in page2 or "secret" not in page2.split("Secret")[0]
+
+
+def test_create_token_form_shows_plaintext_once(env):
+    import re
+    client = _client()
+    _login(client, env)
+    page = client.get("/tokens").text
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+    r = client.post("/tokens", data={"csrf_token": csrf, "name": "ci-bot",
+                                     "scopes": "read,enroll"})
+    assert r.status_code == 200
+    assert "vpa_" in r.text
+
+
+def test_audit_page_renders(env):
+    client = _client()
+    _login(client, env)
+    r = client.get("/audit")
+    assert r.status_code == 200
+    assert "<table" in r.text

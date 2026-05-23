@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block body %}
+<header>
+  <strong>ocserv admin</strong> &mdash; {{ admin.username }}
+  <nav>
+    <a href="/">Users</a> &middot; <a href="/tokens">API Tokens</a> &middot; <a href="/audit">Audit</a>
+    &middot; <form method="post" action="/logout" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Logout</button>
+      </form>
+  </nav>
+</header>
+<table>
+  <thead><tr><th>User</th><th>TOTP</th><th>Status</th><th>Last issued</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.username }}</td>
+      <td>{% if u.has_totp %}&check;{% else %}&mdash;{% endif %}</td>
+      <td>{% if u.disabled %}disabled{% elif u.has_totp %}active{% else %}no key{% endif %}</td>
+      <td>{{ u.last_issued_at or "—" }}</td>
+      <td>
+        <form method="post" action="/users/{{ u.username }}/enroll" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button>{% if u.has_totp %}Re-issue{% else %}Issue{% endif %}</button>
+        </form>
+        {% if u.disabled %}
+        <form method="post" action="/users/{{ u.username }}/enable" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button>Enable</button>
+        </form>
+        {% else %}
+        <form method="post" action="/users/{{ u.username }}/revoke" style="display:inline"
+              onsubmit="return confirm('Revoke {{ u.username }}?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button>Revoke</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

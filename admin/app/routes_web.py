@@ -172,3 +172,184 @@ def logout(
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(SESSION_COOKIE, path="/")
     return resp
+
+
+from app.csrf import CSRFInvalid, generate_csrf_token, verify_csrf
+from app.usernames import InvalidUsername
+from app.users import enable_user, enroll_user, list_users, revoke_user, UserNotFound
+from app.tokens import create_token, list_tokens, revoke_token
+from app.deps import require_admin
+
+CSRF_COOKIE = "__Host-csrf"
+
+
+def _set_csrf(response: Response) -> str:
+    tok = generate_csrf_token()
+    response.set_cookie(CSRF_COOKIE, tok, httponly=False, secure=True,
+                        samesite="strict", path="/")
+    return tok
+
+
+def _require_csrf(form_token: str | None, cookie_token: str | None) -> None:
+    try:
+        verify_csrf(form_token or "", cookie_token or "")
+    except CSRFInvalid:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "csrf invalid")
+
+
+@router.get("/", response_class=HTMLResponse)
+def dashboard(
+    request: Request,
+    admin: AdminRow = Depends(require_admin),
+    conn=Depends(get_conn),
+):
+    settings = get_settings()
+    users = list_users(settings.home_dir, settings.disabled_users_path, conn)
+    csrf = generate_csrf_token()
+    response = templates.TemplateResponse(
+        request, "dashboard.html",
+        {"admin": admin, "users": users, "csrf_token": csrf},
+    )
+    response.set_cookie(CSRF_COOKIE, csrf, httponly=False, secure=True,
+                        samesite="strict", path="/")
+    return response
+
+
+@router.post("/users/{username}/enroll", response_class=HTMLResponse)
+def web_enroll(
+    request: Request, username: str,
+    csrf_token: Annotated[str | None, Form()] = None,
+    csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
+    admin: AdminRow = Depends(require_admin),
+    conn=Depends(get_conn),
+):
+    _require_csrf(csrf_token, csrf_cookie)
+    settings = get_settings()
+    try:
+        result = enroll_user(settings.home_dir, conn, username=username,
+                             actor_type="admin", actor_id=admin.id, issuer="ocserv-lab")
+    except InvalidUsername:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "bad username")
+    except UserNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such user")
+    write_audit(conn, actor_type="admin", actor_id=admin.id,
+                action="enroll.ok", target_user=username, ip=_ip(request),
+                user_agent=request.headers.get("user-agent"), result="ok")
+    return templates.TemplateResponse(
+        request, "qr_once.html",
+        {"username": username, "secret": result.enrollment.secret,
+         "qr_b64": result.qr_png_base64,
+         "scratch_codes": list(result.enrollment.scratch_codes)},
+    )
+
+
+@router.post("/users/{username}/revoke")
+def web_revoke(
+    request: Request, username: str,
+    csrf_token: Annotated[str | None, Form()] = None,
+    csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
+    admin: AdminRow = Depends(require_admin),
+    conn=Depends(get_conn),
+):
+    _require_csrf(csrf_token, csrf_cookie)
+    settings = get_settings()
+    try:
+        revoke_user(settings.home_dir, settings.disabled_users_path, conn,
+                    username=username, actor_type="admin", actor_id=admin.id)
+    except (InvalidUsername, UserNotFound) as e:
+        code = status.HTTP_400_BAD_REQUEST if isinstance(e, InvalidUsername) else status.HTTP_404_NOT_FOUND
+        raise HTTPException(code, str(e))
+    write_audit(conn, actor_type="admin", actor_id=admin.id,
+                action="revoke.ok", target_user=username, ip=_ip(request),
+                user_agent=request.headers.get("user-agent"), result="ok")
+    return RedirectResponse("/", status_code=303)
+
+
+@router.post("/users/{username}/enable")
+def web_enable(
+    request: Request, username: str,
+    csrf_token: Annotated[str | None, Form()] = None,
+    csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
+    admin: AdminRow = Depends(require_admin),
+    conn=Depends(get_conn),
+):
+    _require_csrf(csrf_token, csrf_cookie)
+    settings = get_settings()
+    try:
+        enable_user(settings.home_dir, settings.disabled_users_path, conn,
+                    username=username, actor_type="admin", actor_id=admin.id)
+    except InvalidUsername:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "bad username")
+    write_audit(conn, actor_type="admin", actor_id=admin.id,
+                action="enable.ok", target_user=username, ip=_ip(request),
+                user_agent=request.headers.get("user-agent"), result="ok")
+    return RedirectResponse("/", status_code=303)
+
+
+@router.get("/tokens", response_class=HTMLResponse)
+def tokens_page(
+    request: Request, admin: AdminRow = Depends(require_admin), conn=Depends(get_conn),
+):
+    rows = list_tokens(conn)
+    csrf = generate_csrf_token()
+    response = templates.TemplateResponse(
+        request, "tokens.html", {"admin": admin, "tokens": rows, "csrf_token": csrf},
+    )
+    response.set_cookie(CSRF_COOKIE, csrf, httponly=False, secure=True,
+                        samesite="strict", path="/")
+    return response
+
+
+@router.post("/tokens", response_class=HTMLResponse)
+def tokens_create(
+    request: Request,
+    name: Annotated[str, Form()], scopes: Annotated[str, Form()],
+    csrf_token: Annotated[str | None, Form()] = None,
+    csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
+    admin: AdminRow = Depends(require_admin), conn=Depends(get_conn),
+):
+    _require_csrf(csrf_token, csrf_cookie)
+    scope_list = [s.strip() for s in scopes.split(",") if s.strip()]
+    if not name.strip() or not scope_list:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "name + scopes required")
+    created = create_token(conn, name=name.strip(), scopes=scope_list,
+                           created_by_admin_id=admin.id)
+    write_audit(conn, actor_type="admin", actor_id=admin.id,
+                action="token.create", target_user=None, ip=_ip(request),
+                user_agent=request.headers.get("user-agent"), result="ok",
+                details={"name": name, "scopes": scope_list, "token_id": created.token_id})
+    return templates.TemplateResponse(
+        request, "token_once.html",
+        {"plaintext": created.plaintext, "name": name},
+    )
+
+
+@router.post("/tokens/{token_id}/revoke")
+def tokens_revoke(
+    request: Request, token_id: int,
+    csrf_token: Annotated[str | None, Form()] = None,
+    csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
+    admin: AdminRow = Depends(require_admin), conn=Depends(get_conn),
+):
+    _require_csrf(csrf_token, csrf_cookie)
+    revoke_token(conn, token_id)
+    write_audit(conn, actor_type="admin", actor_id=admin.id,
+                action="token.revoke", target_user=None, ip=_ip(request),
+                user_agent=request.headers.get("user-agent"), result="ok",
+                details={"token_id": token_id})
+    return RedirectResponse("/tokens", status_code=303)
+
+
+@router.get("/audit", response_class=HTMLResponse)
+def audit_page(
+    request: Request, admin: AdminRow = Depends(require_admin),
+    conn=Depends(get_conn), limit: int = 100, offset: int = 0,
+):
+    limit = min(max(1, limit), 500)
+    rows = conn.execute(
+        "SELECT id, ts, actor_type, actor_id, action, target_user, ip, result "
+        "FROM audit_log ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset),
+    ).fetchall()
+    return templates.TemplateResponse(
+        request, "audit.html", {"admin": admin, "rows": rows, "offset": offset, "limit": limit},
+    )

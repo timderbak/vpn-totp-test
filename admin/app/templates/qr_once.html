@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>TOTP for {{ username }}</h1>
+<p style="color:darkred"><strong>This is the only time the secret is shown. Save it now.</strong></p>
+<img src="data:image/png;base64,{{ qr_b64 }}" alt="QR">
+<p>Secret (base32): <code>{{ secret }}</code></p>
+<h2>Scratch codes</h2>
+<ul>{% for c in scratch_codes %}<li><code>{{ c }}</code></li>{% endfor %}</ul>
+<p><a href="/" role="button">Back to dashboard</a></p>
+{% endblock %}

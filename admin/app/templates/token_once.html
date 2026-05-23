@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Token created: {{ name }}</h1>
+<p style="color:darkred"><strong>This is the only time the plaintext token is shown.</strong></p>
+<p><code style="font-size:1.2em">{{ plaintext }}</code></p>
+<p><a href="/tokens" role="button">Back to tokens</a></p>
+{% endblock %}

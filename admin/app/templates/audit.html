@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block body %}
+<header>
+  <strong>Audit log</strong>
+  <nav><a href="/">Users</a> &middot; <a href="/tokens">API Tokens</a> &middot; <a href="/audit">Audit</a></nav>
+</header>
+<table>
+  <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>IP</th><th>Result</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r["ts"] }}</td>
+      <td>{{ r["actor_type"] }}#{{ r["actor_id"] or "" }}</td>
+      <td>{{ r["action"] }}</td>
+      <td>{{ r["target_user"] or "" }}</td>
+      <td>{{ r["ip"] or "" }}</td>
+      <td>{{ r["result"] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p>
+  <a href="/audit?offset={{ offset + limit }}" role="button">Older &rarr;</a>
+</p>
+{% endblock %}
