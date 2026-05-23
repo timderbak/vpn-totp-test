@@ -19,23 +19,43 @@ def get_conn():
     return _conn
 
 
+class NeedsLogin(Exception):
+    """Raised by web-route auth dep when caller has no/invalid session.
+    Triggers a redirect to /login via the registered exception handler in main.py."""
+
+
+def _load_admin_from_session(conn, session_cookie: str | None) -> AdminRow:
+    if not session_cookie:
+        raise SessionInvalid()
+    s = lookup_session(conn, session_cookie)
+    touch_session(conn, s.id)
+    row = conn.execute("SELECT id, username, totp_secret FROM admins WHERE id=?",
+                       (s.admin_id,)).fetchone()
+    if not row:
+        raise SessionInvalid()
+    return AdminRow(id=row["id"], username=row["username"], totp_enrolled=row["totp_secret"] is not None)
+
+
 def require_admin(
     request: Request,
     conn = Depends(get_conn),
     session_cookie: Annotated[str | None, Cookie(alias="__Host-admin_session")] = None,
 ) -> AdminRow:
-    if not session_cookie:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "no session")
     try:
-        s = lookup_session(conn, session_cookie)
+        return _load_admin_from_session(conn, session_cookie)
     except SessionInvalid:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session invalid")
-    touch_session(conn, s.id)
-    row = conn.execute("SELECT id, username, totp_secret FROM admins WHERE id=?",
-                       (s.admin_id,)).fetchone()
-    if not row:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "admin missing")
-    return AdminRow(id=row["id"], username=row["username"], totp_enrolled=row["totp_secret"] is not None)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "no session")
+
+
+def require_admin_web(
+    request: Request,
+    conn = Depends(get_conn),
+    session_cookie: Annotated[str | None, Cookie(alias="__Host-admin_session")] = None,
+) -> AdminRow:
+    try:
+        return _load_admin_from_session(conn, session_cookie)
+    except SessionInvalid:
+        raise NeedsLogin()
 
 
 def require_token(

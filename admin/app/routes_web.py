@@ -178,7 +178,7 @@ from app.csrf import CSRFInvalid, generate_csrf_token, verify_csrf
 from app.usernames import InvalidUsername
 from app.users import enable_user, enroll_user, list_users, revoke_user, UserNotFound
 from app.tokens import create_token, list_tokens, revoke_token
-from app.deps import require_admin
+from app.deps import require_admin_web
 
 CSRF_COOKIE = "__Host-csrf"
 
@@ -200,7 +200,7 @@ def _require_csrf(form_token: str | None, cookie_token: str | None) -> None:
 @router.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
-    admin: AdminRow = Depends(require_admin),
+    admin: AdminRow = Depends(require_admin_web),
     conn=Depends(get_conn),
 ):
     settings = get_settings()
@@ -220,7 +220,7 @@ def web_enroll(
     request: Request, username: str,
     csrf_token: Annotated[str | None, Form()] = None,
     csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
-    admin: AdminRow = Depends(require_admin),
+    admin: AdminRow = Depends(require_admin_web),
     conn=Depends(get_conn),
 ):
     _require_csrf(csrf_token, csrf_cookie)
@@ -248,7 +248,7 @@ def web_revoke(
     request: Request, username: str,
     csrf_token: Annotated[str | None, Form()] = None,
     csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
-    admin: AdminRow = Depends(require_admin),
+    admin: AdminRow = Depends(require_admin_web),
     conn=Depends(get_conn),
 ):
     _require_csrf(csrf_token, csrf_cookie)
@@ -270,7 +270,7 @@ def web_enable(
     request: Request, username: str,
     csrf_token: Annotated[str | None, Form()] = None,
     csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
-    admin: AdminRow = Depends(require_admin),
+    admin: AdminRow = Depends(require_admin_web),
     conn=Depends(get_conn),
 ):
     _require_csrf(csrf_token, csrf_cookie)
@@ -288,7 +288,7 @@ def web_enable(
 
 @router.get("/tokens", response_class=HTMLResponse)
 def tokens_page(
-    request: Request, admin: AdminRow = Depends(require_admin), conn=Depends(get_conn),
+    request: Request, admin: AdminRow = Depends(require_admin_web), conn=Depends(get_conn),
 ):
     rows = list_tokens(conn)
     csrf = generate_csrf_token()
@@ -306,7 +306,7 @@ def tokens_create(
     name: Annotated[str, Form()], scopes: Annotated[str, Form()],
     csrf_token: Annotated[str | None, Form()] = None,
     csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
-    admin: AdminRow = Depends(require_admin), conn=Depends(get_conn),
+    admin: AdminRow = Depends(require_admin_web), conn=Depends(get_conn),
 ):
     _require_csrf(csrf_token, csrf_cookie)
     scope_list = [s.strip() for s in scopes.split(",") if s.strip()]
@@ -329,7 +329,7 @@ def tokens_revoke(
     request: Request, token_id: int,
     csrf_token: Annotated[str | None, Form()] = None,
     csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
-    admin: AdminRow = Depends(require_admin), conn=Depends(get_conn),
+    admin: AdminRow = Depends(require_admin_web), conn=Depends(get_conn),
 ):
     _require_csrf(csrf_token, csrf_cookie)
     revoke_token(conn, token_id)
@@ -342,7 +342,7 @@ def tokens_revoke(
 
 @router.get("/audit", response_class=HTMLResponse)
 def audit_page(
-    request: Request, admin: AdminRow = Depends(require_admin),
+    request: Request, admin: AdminRow = Depends(require_admin_web),
     conn=Depends(get_conn), limit: int = 100, offset: int = 0,
 ):
     limit = min(max(1, limit), 500)
