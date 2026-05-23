@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Enroll your authenticator</h1>
+<p>Scan this QR with Google Authenticator / 1Password / etc.</p>
+<img src="data:image/png;base64,{{ qr_b64 }}" alt="QR">
+<p>Secret (manual entry): <code>{{ secret }}</code></p>
+<form method="post" action="/login/enroll-totp">
+  <label>Enter the current code to confirm <input name="code" pattern="[0-9]{6}" required></label>
+  <button type="submit">Confirm</button>
+</form>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Two-factor code</h1>
+{% if error %}<p style="color:red">{{ error }}</p>{% endif %}
+<form method="post" action="/login/totp">
+  <label>6-digit code <input name="code" pattern="[0-9]{6}" inputmode="numeric" required autofocus></label>
+  <button type="submit">Sign in</button>
+</form>
+{% endblock %}
