@@ -18,6 +18,12 @@ fi
 
 mkdir -p /var/lib/admin
 
+# If args were provided (e.g. `docker compose run admin pytest ...`), exec them.
+# Otherwise start the server.
+if [[ $# -gt 0 ]]; then
+    exec "$@"
+fi
+
 echo "[admin] starting uvicorn on 0.0.0.0:8443 (HTTPS)"
 exec uvicorn app.main:app \
     --host 0.0.0.0 --port 8443 \
