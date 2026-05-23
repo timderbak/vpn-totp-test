@@ -1,131 +1,336 @@
-# VibecoSwagaTemplate
+# ocserv + TOTP lab
 
-📊 **[Презентация о шаблоне →](https://timderbak.github.io/VibecoSwagaPlatform/)** ([PDF](./docs/presentation.pdf))
+Локальный учебный стенд OpenConnect VPN (ocserv) с двухфакторной
+аутентификацией. Цель — руками пройти весь путь: создать пользователя,
+сгенерировать ему TOTP-секрет, отсканировать QR в приложение на телефоне,
+подключиться с Mac VPN-клиентом по схеме «пароль + 6-значный код».
 
-Шаблон-репозиторий для **соло-вайбкодера**. Внутри только то, что нужно чтобы новый проект сразу стартовал с хорошими привычками:
+Это **тестовый стенд**, не production. Локальные системные юзеры, plaintext
+пароли в репозитории — всё осознанно, чтобы видеть механику. Для прода нужен
+LDAP/IdP, хэши, секреты в vault и так далее.
 
-- 🧠 **CLAUDE.md** на базе четырёх принципов Karpathy против типичных болезней LLM-кода + локальные практики.
-- 🔌 **Готовый набор плагинов** Claude Code (superpowers, GSD, claude-mem, context7, context-mode, frontend-design, reflexion, github, supabase).
-- 📚 **Шпаргалка по system design** под рукой (`docs/system-design-patterns.md`).
-
-Шаблон ничего не пишет за тебя — он только настраивает Claude Code так, чтобы дальше с ним было приятно работать.
-
----
-
-## Как начать новый проект
-
-```bash
-# 1. На GitHub: жми "Use this template" → создаёшь свой репо
-git clone git@github.com:<you>/<your-project>.git
-cd <your-project>
-
-# 2. Включи плагины глобально (один раз на машину; требует jq)
-./scripts/install-plugins.sh
-# Скрипт допишет enabledPlugins в ~/.claude/settings.json (с бэкапом).
-# Печатает один раз список marketplaces для регистрации через
-# /plugin marketplace add внутри `claude` — это нужно сделать вручную
-# один раз, потом плагины подтянутся сами на старте claude.
-
-# 3. Запусти Claude и опиши идею
-claude
-> хочу маркетплейс лимитированных кроссовок с auth через Supabase и оплатой Stripe
-```
-
-Дальше Claude:
-- Прочитает CLAUDE.md и поймёт правила работы.
-- Если идея с UI — сначала набросает HTML-мокап через `frontend-design` / `gsd-sketch`, обсудит с тобой, и только потом полезет в бэк (см. CLAUDE.md §3).
-- Если идея явно многофазная — предложит `gsd-new-project` (структура `.planning/PROJECT.md` + ROADMAP).
-- Если фича на один заход — сразу через `superpowers:brainstorming` → `writing-plans` → `test-driven-development`.
-
-Стек **не предписан**. Выбираешь сам или просишь Claude рекомендовать под задачу. Шаблон стек-нейтрален.
+> Шаблон-репозиторий, из которого собран этот стенд, описан в
+> [TEMPLATE.md](./TEMPLATE.md). Правила работы Claude Code — в
+> [CLAUDE.md](./CLAUDE.md).
 
 ---
 
-## Какие плагины и зачем
-
-### Воркфлоу (ставятся всегда)
-
-| Плагин | Когда сработает |
-|---|---|
-| **superpowers** | Дисциплина одной задачи: brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion. |
-| **gsd** | Опционально. Многофазные проекты с артефактами в `.planning/`. Если задача крупнее одного PR — берёшь GSD. См. [`docs/gsd-vs-superpowers.md`](docs/gsd-vs-superpowers.md). |
-| **claude-mem** | Память между сессиями: `mem-search` («это уже решали?»). |
-| **context7** | Свежие доки библиотек — когда упёрся в баг библиотеки, вместо галлюцинаций по памяти. |
-| **context-mode** | Перехватывает большие выводы команд (`ctx_batch_execute`). Защищает контекстное окно. |
-| **frontend-design** | Дизайн-система и UI-компоненты с осмысленной эстетикой. Используется в §3 для HTML-мокапов. |
-| **reflexion** | Мульти-перспективная критика после крупной фичи. |
-| **github** | `gh` операции из чата (PR, issues, branches). |
-
-### Deploy и БД (ставятся всегда — под рукой при выборе стека)
-
-| Плагин | Когда сработает |
-|---|---|
-| **vercel** | Vercel-семейство: AI SDK, deploy, env, next-upgrade, shadcn, performance. Дефолт для Next.js. |
-| **railway** | Бэк + Postgres в один клик. Дефолт для full-stack MVP. |
-
-### Опциональные — поставь когда реально понадобится
-
-| Плагин | Когда брать |
-|---|---|
-| **supabase** | Если выбрал Supabase (Postgres + Auth) как БД-слой. |
-| **neon** | Если хочешь serverless Postgres с ветками для preview-деплоев. |
-| **prisma** | Если хочешь типизированный ORM поверх Postgres. |
-| **auth0** | Если нужен managed auth (OAuth/SSO) без привязки к Supabase. |
-| **ui-ux-pro-max** | Когда `frontend-design` не хватает — 67 стилей, 96 палитр, 57 пар шрифтов. |
-
-Decision-tree по стекам — в [CLAUDE.md §10](./CLAUDE.md). Полный список и описание — `.claude-plugins.json`. Скрипт `./scripts/install-plugins.sh` ставит все required и печатает команды для optional.
-
----
-
-## Что в CLAUDE.md (краткий обзор)
-
-CLAUDE.md — главный артефакт шаблона. Базируется на [наблюдениях Karpathy](https://x.com/karpathy/status/2015883857489522876) о том, как LLM системно ошибаются:
-
-> *«Модели делают неправильные допущения на твой счёт и просто идут с ними. Они не управляют своей confusion, не просят уточнений, не подсвечивают противоречия, не показывают tradeoffs, не пушат обратно когда должны. Они переусложняют код, раздувают абстракции, не чистят мёртвый код».*
-
-Четыре принципа против этого:
-
-1. **Думай до кода** — проговори допущения, предложи варианты, push back.
-2. **Минимум кода** — никаких фич / абстракций / гибкости на будущее. Regex до LLM.
-3. **Хирургические правки** — трогай только то, что должен; не «улучшай» рядом.
-4. **Goal-driven исполнение** — формулируй задачи как success criteria, чтобы цикл крутился сам.
-
-Плюс локальные практики: **UI-набросок до бэка** (§3), Docker, integration-тесты с реальной БД, research-first + stop-rule (три провала → стоп и читать доки), секреты только через `.env`, осознанный `/compact` на breakpoints, conventional commits.
-
-Подробно — [CLAUDE.md](./CLAUDE.md).
-
----
-
-## Структура шаблона
+## Что внутри
 
 ```
 .
-├── CLAUDE.md                          правила работы Claude Code (Karpathy + локальные практики)
-├── README.md                          этот файл
-├── .claude-plugins.json               список плагинов с описанием
+├── docker-compose.yml      # один сервис ocserv, 4443:443 tcp+udp
+├── Dockerfile              # debian:bookworm-slim + ocserv + libpam-google-authenticator
+├── config/ocserv.conf      # конфиг ocserv (с подробными комментариями)
+├── pam/ocserv              # PAM-стек: пароль + TOTP, оба required
 ├── scripts/
-│   └── install-plugins.sh             jq-мерджит enabledPlugins в ~/.claude/settings.json
-└── docs/
-    ├── presentation.md                MARP-презентация о шаблоне
-    ├── system-design-patterns.md      шпаргалка по Alex Xu (Vol. 1)
-    └── gsd-vs-superpowers.md          как сосуществуют два плагина с пересекающейся функциональностью
+│   ├── entrypoint.sh       # генерит серты, создаёт юзеров, стартует ocserv
+│   └── totp-enroll         # `docker exec ocserv totp-enroll <user>` — QR в терминал
+└── users.env               # тестовые юзеры/пароли (commit-friendly, см. ниже)
 ```
 
-Шаблон **не пишет код**. После описания идеи Claude сам создаёт:
-- `.planning/` — если ты или Claude выбрали GSD (PROJECT.md, ROADMAP.md, phases/).
-- `docs/superpowers/` — спеки и планы от superpowers.
-- Код в выбранном стеке.
+---
+
+## Быстрый старт
+
+### 1. Поднять стенд
+
+```bash
+docker compose up -d --build
+```
+
+Сборка занимает 1–2 минуты на Apple Silicon (образ нативный arm64, без QEMU).
+Проверить что ocserv действительно слушает:
+
+```bash
+docker compose logs ocserv | tail -20
+# должно быть видно: "starting ocserv on tcp/udp 443 (mapped to host 4443)"
+```
+
+### 2. Сгенерировать TOTP для пользователя
+
+```bash
+docker exec -it ocserv totp-enroll alice
+```
+
+В терминале появится:
+- **QR-код** Unicode-блоками — отсканируй любым TOTP-приложением (Google
+  Authenticator, Authy, 1Password, Яндекс.Ключ, Bitwarden — всё одинаково).
+- **Base32-секрет** — на случай если QR не сканируется, можно ввести вручную.
+- **Emergency scratch codes** — одноразовые, на случай если телефон потеряется.
+
+Файл секрета лежит у пользователя в `/home/alice/.google_authenticator`.
+
+### 3. Подключиться VPN-клиентом
+
+Поставь openconnect:
+
+```bash
+brew install openconnect
+```
+
+Подключайся:
+
+```bash
+sudo openconnect --protocol=anyconnect --user=alice localhost:4443
+```
+
+Флаги:
+- `--protocol=anyconnect` — ocserv совместим с Cisco AnyConnect, openconnect
+  по этому протоколу с ним разговаривает.
+- Серт у нас self-signed, поэтому openconnect ругнётся при первом подключении:
+  `Certificate from VPN server "localhost" failed verification.` → введи
+  `yes` чтобы принять. Альтернативно — запинить fingerprint:
+  ```bash
+  FP=$(openssl s_client -connect localhost:4443 </dev/null 2>/dev/null \
+       | openssl x509 -fingerprint -sha256 -noout | sed 's/^.*=//' \
+       | tr -d ':' | tr 'A-F' 'a-f')
+  sudo openconnect --protocol=anyconnect \
+       --servercert=sha256:$FP --user=alice localhost:4443
+  ```
+  Тогда никаких prompt'ов по сертификату.
+
+Когда клиент попросит пароль — введи **пароль и TOTP-код одной строкой,
+без пробела и разделителя**:
+
+```
+Password: alice-pass-123482104
+                          └─┬─┘
+                            └─ 6 цифр из TOTP-приложения, прямо в конце пароля
+```
+
+Как это работает: в PAM-стеке (`pam/ocserv`) стоит флаг `forward_pass` —
+модуль `pam_google_authenticator` отрезает последние 6 цифр, проверяет код,
+а пароль `alice-pass-123` передаёт дальше в `pam_unix` через `use_first_pass`.
+Один prompt, два фактора.
+
+Если используешь не openconnect, а GUI-клиент Cisco AnyConnect и он
+показывает два отдельных поля — это другой режим PAM (см. альтернативный
+блок в `pam/ocserv`).
+
+После успешного auth увидишь что-то вроде:
+
+```
+Connected as 192.168.99.x, using ssl + DTLS
+```
+
+### 4. Проверить что 2FA реально работает
+
+| Попытка | Результат |
+|---|---|
+| Правильный пароль + правильный код | ✅ подключение |
+| Правильный пароль + неправильный код | ❌ отказ |
+| Неправильный пароль + правильный код | ❌ отказ |
+| Правильный пароль без кода | ❌ отказ |
+
+Логи смотреть так:
+
+```bash
+docker compose logs -f ocserv
+```
+
+При неуспешной auth увидишь строчки про `pam_unix(ocserv:auth): authentication
+failure` или `pam_google_authenticator: Invalid verification code`.
 
 ---
 
-## Источники
+## Что попробовать руками
 
-- [Karpathy: random notes from claude coding (Jan 2026)](https://x.com/karpathy/status/2015883857489522876) — диагноз болезней LLM-кода.
-- [forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills) — четыре принципа в одном CLAUDE.md.
-- [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code) — кит-синк референс по Claude Code (агенты, хуки, скиллы).
+Всё это — для понимания как устроен TOTP, а не для галочки.
+
+1. **Второй пользователь.**
+   ```bash
+   docker exec -it ocserv totp-enroll bob
+   sudo openconnect --protocol=anyconnect localhost:4443 --user=bob -k
+   ```
+
+2. **Посмотреть содержимое секрета.**
+   ```bash
+   docker exec ocserv cat /home/alice/.google_authenticator
+   ```
+   Первая строка — base32-секрет. Дальше — флаги (RATE_LIMIT, DISALLOW_REUSE,
+   WINDOW_SIZE, TOTP_AUTH). В конце — 5 scratch-кодов. **Никакого «списка
+   будущих кодов» нет** — клиент и сервер просто вычисляют HMAC-SHA1 от
+   `(секрет, текущее_время_в_30-секундных_окнах)` и берут 6 цифр. Поэтому
+   часы должны идти синхронно.
+
+3. **Использовать scratch-код вместо TOTP.**
+   Возьми любой из 8-значных scratch-кодов внизу `.google_authenticator`,
+   введи его на месте 6-значного кода — пройдёт один раз и больше никогда.
+
+4. **Перегенерировать секрет.**
+   ```bash
+   docker exec -it ocserv totp-enroll alice
+   ```
+   Старый QR в приложении перестанет работать сразу — секрет на сервере
+   другой. Поэтому в проде не enroll'ят повторно без явной причины.
+
+5. **Сломать время.**
+   В Docker Desktop VM время синхронизировано с хостом. Если вручную сдвинуть
+   часы на телефоне на 5 минут вперёд — TOTP не сойдётся, и ты увидишь это в
+   логах. Это и есть та проблема, из-за которой ±2-3 минуты — норма, а ±5 —
+   уже отказ (`-w 3` в `totp-enroll`).
 
 ---
 
-## Лицензия
+## Админ-панель
 
-MIT.
+Веб-админка для управления TOTP-ключами уже существующих юзеров. Поднимается тем же `docker compose up -d`.
+
+### Первый запуск
+
+1. Создай `.env` из `.env.example`. Сгенерируй bcrypt-хеш пароля админа:
+
+   ```bash
+   htpasswd -nbB admin1 'your-strong-password' | cut -d: -f2
+   ```
+
+   Вставь хеш в `ADMIN_BOOTSTRAP_PASSWORD_HASH`. Туда же — рандомный `ADMIN_COOKIE_SECRET` (64 hex).
+
+2. Подними стек:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. Открой `https://localhost:8443/` (серт self-signed, браузер поругается → принять).
+
+4. Войди под `admin1` + пароль. На первом входе админка попросит отсканировать QR в authenticator-приложении — это TOTP-второй фактор для самой админки. Подтверди, дальше каждый вход = пароль + код.
+
+### Что умеет
+
+- **Users** — список Linux-юзеров из `/home`. Видно у кого есть TOTP, кто заблокирован, когда последний раз выпускали ключ. Кнопки: Issue / Re-issue / Revoke / Enable.
+- **API Tokens** — выпуск токенов для внешних систем со scopes (`read`, `enroll`, `revoke`). Plaintext показывается **один раз**.
+- **Audit** — журнал всех действий.
+
+### API
+
+`Authorization: Bearer vpa_…`
+
+```bash
+TOKEN=vpa_xxx...
+
+# список юзеров
+curl -sk https://localhost:8443/api/v1/users -H "Authorization: Bearer $TOKEN"
+
+# выпустить ключ (вернёт secret + QR один раз)
+curl -sk -X POST https://localhost:8443/api/v1/users/alice/enroll \
+     -H "Authorization: Bearer $TOKEN"
+
+# отозвать
+curl -sk -X POST https://localhost:8443/api/v1/users/alice/revoke \
+     -H "Authorization: Bearer $TOKEN"
+```
+
+### Безопасность
+
+- HTTPS only (self-signed для лаба).
+- Admin: пароль (bcrypt) + TOTP.
+- API: per-system токены, bcrypt-hash в БД.
+- Все действия — в `audit_log`.
+- Rate-limit на login (5 fail/15 мин/IP), на API enroll (1/мин/юзер).
+- Изоляция: admin-контейнер без `docker.sock`, без `privileged`. Влияет на ocserv только через два shared volume.
+
+### Как реализовано «отозвать»
+
+В `pam/ocserv` первой строкой стоит `pam_listfile.so` с файлом `/etc/ocserv/control/disabled-users` (shared volume `ocserv-control`). Админка дописывает в него username при revoke и удаляет `.google_authenticator`. При enable — убирает из файла. Enable **не** возвращает TOTP — после enable надо нажать Issue, чтобы сгенерить новый ключ.
+
+---
+
+## Troubleshooting
+
+### `/dev/net/tun` недоступен
+
+```
+ERROR: cannot open /dev/net/tun: No such file or directory
+```
+
+На большинстве Docker Desktop install'ов TUN внутри VM есть и работает. Если
+у тебя нет — в `docker-compose.yml` закомментируй блок `cap_add` + `devices`
+и раскомментируй `privileged: true`. Сделай `docker compose up -d --build`
+заново.
+
+### openconnect ругается на сертификат
+
+```
+Server certificate verify failed: ...
+```
+
+Используй флаг `-k`. Альтернатива — взять fingerprint и запиниться:
+
+```bash
+docker exec ocserv certtool --infile=/etc/ocserv/ssl/server-cert.pem \
+    --certificate-info | grep -i "sha256 fingerprint"
+
+sudo openconnect --protocol=anyconnect localhost:4443 --user=alice \
+    --servercert pin-sha256:<вставь сюда>
+```
+
+### `Address already in use` на 4443
+
+Что-то на хосте занимает 4443. Поменяй маппинг в `docker-compose.yml`,
+например `5443:443/tcp`, и подключайся к `localhost:5443`.
+
+### Проверить что ocserv вообще слушает
+
+```bash
+docker exec ocserv ss -tlnp | grep 443
+# или с хоста:
+nc -vz localhost 4443
+```
+
+### Рассинхрон времени
+
+Самая частая проблема TOTP. Проверь время в контейнере и на телефоне:
+
+```bash
+docker exec ocserv date
+```
+
+Если время в контейнере поехало — рестарт Docker Desktop обычно лечит
+(VM пересинхронизируется с хостом при старте).
+
+### Auth-only режим vs полный туннель
+
+Acceptance criterion #3 («подключился клиентом — успех») здесь означает:
+**handshake + TLS + auth (пароль + TOTP) прошли, ocserv выдал клиенту IP из
+192.168.99.0/24**. Это и есть то, что мы проверяем — механику 2FA.
+
+Прокачка реального трафика хоста через туннель на macOS+Docker Desktop —
+**отдельная и тяжёлая задача**: Docker Desktop изолирует контейнерную сеть в
+Linux VM, и пробросить весь трафик Mac'а через VPN-туннель, который
+терминируется внутри этой VM, без хаков не получится. На Apple Silicon это
+особенно сложно. Если очень нужен полный туннель — это уже не задача стенда,
+это задача отдельного исследования (host networking, рутинг через `pfctl` на
+Mac, и т. п.).
+
+---
+
+## Очистка
+
+Снести стенд целиком (включая сертификаты и home-папки юзеров):
+
+```bash
+docker compose down -v
+```
+
+Без `-v` — контейнер уйдёт, но именованные volume'ы `ocserv-ssl` и
+`ocserv-home` останутся. Это полезно если хочешь сохранить enrollment между
+рестартами.
+
+---
+
+## Что НЕ так как в проде
+
+Сознательные упрощения для стенда:
+
+- Локальные системные пользователи Linux вместо LDAP/IdP.
+- Пароли в открытом виде в `users.env` (для прода — хэши, vault).
+- `isolate-workers = false` в ocserv.conf (для прода — обязательно `true`).
+- Самоподписанный сертификат + `-k` на клиенте (для прода — Let's Encrypt
+  или корпоративный CA, и pinning).
+- Нет fail2ban, нет rate-limit на уровне сети, нет логирования в SIEM.
+- Все секреты живут в git и в env-файле (для прода — Docker secrets / SOPS /
+  HashiCorp Vault).
+
+В коде эти места отмечены комментариями.
