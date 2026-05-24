@@ -1,0 +1,83 @@
+#!/bin/bash
+# Enroll a TOTP secret for an existing lab user.
+# Usage:   totp-enroll <username>
+# Example: docker exec -it ocserv totp-enroll alice
+#
+# What it does:
+#  1. Validates that the user exists.
+#  2. Runs `google-authenticator` as that user with sensible defaults.
+#     We pipe `-1` on stdin to skip the interactive "now enter a code from your
+#     app to verify it works" prompt — without it the binary aborts under
+#     `docker exec` (no TTY) BEFORE it writes the config file.
+#  3. Re-renders the QR through `qrencode` so it shows up cleanly in any
+#     terminal, with or without TTY, and in chat tool output.
+#  4. Echoes the resulting ~/.google_authenticator (secret + scratch codes).
+#
+# Safe to re-run: existing secrets are overwritten (-f). Old QR / scratch codes
+# stop working immediately.
+
+set -euo pipefail
+
+user="${1:-}"
+if [[ -z "$user" ]]; then
+    echo "usage: totp-enroll <username>" >&2
+    exit 1
+fi
+
+if ! id "$user" &>/dev/null; then
+    echo "error: user '$user' doesn't exist in this container" >&2
+    echo "       check LAB_USERS in users.env or create the user manually" >&2
+    exit 1
+fi
+
+home=$(getent passwd "$user" | cut -d: -f6)
+secret_file="$home/.google_authenticator"
+
+# Flags:
+#  -t / --time-based       TOTP (not HOTP) — what every modern auth app uses
+#  -d / --disallow-reuse   prevents replay of an already-used code in the window
+#  -f / --force            write config without prompting, overwriting any existing one
+#  -r 3 -R 30              rate-limit: max 3 attempts per 30s
+#  -w 3                    allow ±3 time-steps of clock skew (~ ±90s)
+#  -Q UTF8                 print the QR code as Unicode block characters
+#  --label / --issuer      shown inside the authenticator app entry
+#
+# The `echo "-1"` skips the post-generation verification prompt so the binary
+# exits 0 instead of aborting on a missing TTY.
+echo "-1" | su -s /bin/bash "$user" -c "google-authenticator \
+    -t -d -f -r 3 -R 30 -w 3 -Q UTF8 \
+    --label='${user}@ocserv-lab' --issuer='ocserv-lab'" \
+    > /tmp/totp-enroll.out 2>&1 || true
+
+# Extract the base32 secret straight from the file we just wrote — most
+# reliable source.
+if [[ ! -f "$secret_file" ]]; then
+    echo "ERROR: $secret_file was not created. google-authenticator output:" >&2
+    cat /tmp/totp-enroll.out >&2
+    exit 1
+fi
+secret=$(head -n1 "$secret_file")
+
+# Build the otpauth:// URL that any TOTP app understands.
+otpauth_url="otpauth://totp/${user}@ocserv-lab?secret=${secret}&issuer=ocserv-lab"
+
+echo
+echo "================================================================"
+echo "  TOTP secret enrolled for user: $user"
+echo "================================================================"
+echo "  Scan this QR with Google Authenticator / Authy / 1Password /"
+echo "  Yandex.Key / any TOTP app:"
+echo
+qrencode -t UTF8 "$otpauth_url"
+echo
+echo "  Manual entry (if QR doesn't scan):"
+echo "    secret: $secret"
+echo "    issuer: ocserv-lab"
+echo "    label:  ${user}@ocserv-lab"
+echo
+echo "  Contents of $secret_file:"
+echo "  ----------------------------------------------------------------"
+cat "$secret_file"
+echo "  ----------------------------------------------------------------"
+echo "  Last 5 lines = emergency scratch codes (one-shot, use if phone gone)."
+echo "================================================================"
