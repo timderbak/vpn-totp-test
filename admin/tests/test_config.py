@@ -7,6 +7,8 @@ def test_settings_loads_from_env(monkeypatch):
     monkeypatch.setenv("ADMIN_BOOTSTRAP_USERNAME", "admin1")
     monkeypatch.setenv("ADMIN_BOOTSTRAP_PASSWORD_HASH", "$2b$12$abcdefghijklmnopqrstuv")
     monkeypatch.setenv("ADMIN_COOKIE_SECRET", "0" * 64)
+    monkeypatch.setenv("ADMIN_LDAP_BIND_DN", "cn=admin-readonly,dc=vpn,dc=local")
+    monkeypatch.setenv("ADMIN_LDAP_BIND_PASSWORD", "bindpw")
 
     settings = Settings()
 
