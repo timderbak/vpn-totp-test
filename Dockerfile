@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nslcd \
         libnss-ldapd \
         ldap-utils \
+        rsyslog \
+        pamtester \
         gettext-base \
         gnutls-bin \
         iproute2 \

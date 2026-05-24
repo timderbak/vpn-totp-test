@@ -72,9 +72,11 @@ fi
 # 2. LDAP wait + nslcd render + nslcd start
 # ---------------------------------------------------------------------------
 
-# Render nslcd config from template (envsubst pulls bind password from env,
-# so the password is never committed to git).
-envsubst < /etc/nslcd.conf.tmpl > /etc/nslcd.conf
+# Render nslcd config from template. We pass an explicit allowlist of vars
+# to envsubst so that nslcd-specific tokens like $username (used in
+# pam_authz_search) are left literal — only $ADMIN_LDAP_* gets expanded.
+envsubst '$ADMIN_LDAP_URL $ADMIN_LDAP_BASE_DN $ADMIN_LDAP_BIND_DN $ADMIN_LDAP_BIND_PASSWORD $ADMIN_LDAP_USER_OU $ADMIN_LDAP_VPN_GROUP_DN $ADMIN_LDAP_TIMEOUT' \
+    < /etc/nslcd.conf.tmpl > /etc/nslcd.conf
 chmod 600 /etc/nslcd.conf
 chown root:nslcd /etc/nslcd.conf 2>/dev/null || true
 
@@ -89,6 +91,10 @@ for i in 1 2 3 4 5; do
     log "waiting for LDAP ($i/5)..."
     sleep 2
 done
+
+# Start rsyslog so pam_google_authenticator and pam_ldap debug lines land
+# in /var/log/auth.log (the only practical way to see why PAM said no).
+rsyslogd 2>/dev/null || true
 
 # Start nslcd daemon in the background. libpam-ldapd's pam_ldap.so talks to
 # it over a UNIX socket — without nslcd running, every PAM auth fails.
