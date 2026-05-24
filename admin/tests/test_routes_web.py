@@ -5,6 +5,21 @@ from app.main import app
 from app.db import init_db, connect
 from app.deps import get_conn
 from app.auth import bootstrap_admin_if_needed, set_admin_totp
+from app.ldap_client import LdapUser
+
+
+@pytest.fixture(autouse=True)
+def fake_ldap(monkeypatch):
+    users = [
+        LdapUser(username="alice", uid_number=2001, gid_number=2001,
+                 display_name="Alice", email="alice@vpn.local"),
+    ]
+    monkeypatch.setattr("app.ldap_client.list_users", lambda: users)
+    monkeypatch.setattr("app.ldap_client.get_user",
+                        lambda u: next((x for x in users if x.username == u), None))
+    monkeypatch.setattr("app.ldap_client.invalidate_cache", lambda: None)
+    monkeypatch.setattr("app.ldap_client.cache_age_seconds", lambda: 5)
+    monkeypatch.setattr("app.ldap_client.stale_users", lambda: users)
 
 
 @pytest.fixture
@@ -113,11 +128,15 @@ def test_dashboard_requires_session(env):
 
 
 def test_dashboard_lists_users(env):
+    # Dashboard is now a skeleton; the user list arrives via htmx GET /users/_list.
     client = _client()
     _login(client, env)
     r = client.get("/")
     assert r.status_code == 200
-    assert "alice" in r.text
+    assert 'hx-get="/users/_list"' in r.text
+    # And the partial returns the user
+    r2 = client.get("/users/_list")
+    assert "alice" in r2.text
 
 
 def test_enroll_via_form_requires_csrf(env):
@@ -160,3 +179,39 @@ def test_audit_page_renders(env):
     r = client.get("/audit")
     assert r.status_code == 200
     assert "<table" in r.text
+
+
+def test_users_list_partial_returns_only_tbody(env):
+    client = _client()
+    _login(client, env)
+    r = client.get("/users/_list")
+    assert r.status_code == 200
+    assert "<table" not in r.text
+    assert "alice" in r.text
+
+
+def test_refresh_invalidates_cache_and_redirects(env, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.ldap_client.invalidate_cache", lambda: calls.append(1))
+    client = _client()
+    _login(client, env)
+    import re
+    page = client.get("/").text
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+    r = client.post("/users/_refresh", data={"csrf_token": csrf}, follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert r.headers["location"] == "/"
+    assert calls == [1]
+
+
+def test_dashboard_renders_ldap_error_banner_when_down(env, monkeypatch):
+    from app.ldap_client import LdapUnavailable
+    def _raise():
+        raise LdapUnavailable("down")
+    monkeypatch.setattr("app.ldap_client.list_users", _raise)
+    monkeypatch.setattr("app.ldap_client.stale_users", lambda: [])
+    client = _client()
+    _login(client, env)
+    r = client.get("/users/_list")
+    assert r.status_code == 200
+    assert "LDAP" in r.text and ("недоступен" in r.text or "unavailable" in r.text.lower())

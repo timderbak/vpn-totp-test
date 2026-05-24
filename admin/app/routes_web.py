@@ -217,16 +217,59 @@ def dashboard(
     admin: AdminRow = Depends(require_admin_web),
     conn=Depends(get_conn),
 ):
-    settings = get_settings()
-    users = list_users(settings.home_dir, settings.disabled_users_path, conn)
+    from app import ldap_client
     csrf = generate_csrf_token()
     response = templates.TemplateResponse(
         request, "dashboard.html",
-        {"admin": admin, "users": users, "csrf_token": csrf},
+        {"admin": admin, "csrf_token": csrf,
+         "cache_age": ldap_client.cache_age_seconds()},
     )
     response.set_cookie(CSRF_COOKIE, csrf, httponly=False, secure=True,
                         samesite="strict", path="/")
     return response
+
+
+@router.get("/users/_list", response_class=HTMLResponse)
+def users_list_partial(
+    request: Request,
+    admin: AdminRow = Depends(require_admin_web),
+    conn=Depends(get_conn),
+):
+    from app import ldap_client
+    from app.ldap_client import LdapUnavailable
+    settings = get_settings()
+    csrf = request.cookies.get(CSRF_COOKIE, "")
+    ldap_error = None
+    try:
+        users = list_users(settings.home_dir, settings.disabled_users_path, conn)
+    except LdapUnavailable as e:
+        ldap_error = str(e)
+        stale = ldap_client.stale_users() or []
+        from pathlib import Path as _P
+        from app.users import _read_denylist
+        denied = set(_read_denylist(settings.disabled_users_path))
+        users = []
+        for su in stale:
+            ga = _P(settings.home_dir) / su.username / ".google_authenticator"
+            users.append({"username": su.username, "has_totp": ga.exists(),
+                          "disabled": su.username in denied, "last_issued_at": None})
+    return templates.TemplateResponse(
+        request, "_users_table.html",
+        {"users": users, "csrf_token": csrf, "ldap_error": ldap_error},
+    )
+
+
+@router.post("/users/_refresh")
+def users_refresh(
+    request: Request,
+    csrf_token: Annotated[str | None, Form()] = None,
+    csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
+    admin: AdminRow = Depends(require_admin_web),
+):
+    _require_csrf(csrf_token, csrf_cookie)
+    from app import ldap_client
+    ldap_client.invalidate_cache()
+    return RedirectResponse("/", status_code=303)
 
 
 @router.post("/users/{username}/enroll", response_class=HTMLResponse)
