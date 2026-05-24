@@ -56,6 +56,23 @@ def test_login_correct_password_advances_to_totp_step(env):
     assert "/login/totp" in r.headers["location"]
 
 
+def test_totp_step_rate_limited_after_5_fails(env):
+    """After 5 failed TOTP attempts from same IP, /login/totp returns 429."""
+    set_admin_totp(env["conn"], admin_id=1, secret="JBSWY3DPEHPK3PXP")
+    client = _client()
+    client.post("/login", data={"username": "admin1", "password": "pw"})
+    # 5 failed attempts → still 401
+    for _ in range(5):
+        r = client.post("/login/totp", data={"code": "000000"}, follow_redirects=False)
+        assert r.status_code == 401
+        # re-acquire pending cookie (route deletes it on fail)
+        client.post("/login", data={"username": "admin1", "password": "pw"})
+    # 6th attempt → 429 (limiter triggers BEFORE verify, so a fresh pending doesn't help)
+    r = client.post("/login/totp", data={"code": "000000"}, follow_redirects=False)
+    assert r.status_code == 429
+    assert r.headers.get("retry-after")
+
+
 def test_first_login_forces_admin_totp_enroll(env):
     client = _client()
     client.post("/login", data={"username": "admin1", "password": "pw"}, follow_redirects=False)

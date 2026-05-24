@@ -1,8 +1,12 @@
+import hmac
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import pyotp
 from passlib.context import CryptContext
+
+TOTP_WINDOW = 1  # ± steps accepted around current step (each step = 30s)
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -53,10 +57,37 @@ def set_admin_totp(conn: sqlite3.Connection, *, admin_id: int, secret: str) -> N
 
 
 def verify_admin_totp(conn: sqlite3.Connection, *, admin_id: int, code: str) -> None:
-    row = conn.execute("SELECT totp_secret FROM admins WHERE id=?", (admin_id,)).fetchone()
+    row = conn.execute(
+        "SELECT totp_secret, last_used_totp_step FROM admins WHERE id=?", (admin_id,),
+    ).fetchone()
     if row is None:
         raise AuthFailed()
     if row["totp_secret"] is None:
         raise TOTPRequired()
-    if not pyotp.TOTP(row["totp_secret"]).verify(code, valid_window=1):
+    if not code or not code.isdigit() or len(code) != 6:
         raise AuthFailed()
+
+    totp = pyotp.TOTP(row["totp_secret"])
+    now = int(time.time())
+    step_size = totp.interval
+    current_step = now // step_size
+    last_used = row["last_used_totp_step"]
+
+    # Iterate ± TOTP_WINDOW steps, find which one the code corresponds to.
+    matched_step: int | None = None
+    for offset in range(-TOTP_WINDOW, TOTP_WINDOW + 1):
+        step = current_step + offset
+        expected = totp.at(step * step_size)
+        if hmac.compare_digest(expected, code):
+            matched_step = step
+            break
+    if matched_step is None:
+        raise AuthFailed()
+
+    # Replay protection: reject codes from a step <= the last successfully used step.
+    if last_used is not None and matched_step <= last_used:
+        raise AuthFailed()
+
+    conn.execute(
+        "UPDATE admins SET last_used_totp_step=? WHERE id=?", (matched_step, admin_id),
+    )

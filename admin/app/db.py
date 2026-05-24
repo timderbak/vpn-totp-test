@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS admins (
     password_hash TEXT NOT NULL,
     totp_secret TEXT,
     totp_enrolled_at TIMESTAMP,
+    last_used_totp_step INTEGER,
     created_at TIMESTAMP NOT NULL
 );
 
@@ -73,4 +74,11 @@ def connect(db_path: str) -> sqlite3.Connection:
 def init_db(db_path: str) -> None:
     conn = connect(db_path)
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(admins)")}
+    if "last_used_totp_step" not in cols:
+        conn.execute("ALTER TABLE admins ADD COLUMN last_used_totp_step INTEGER")

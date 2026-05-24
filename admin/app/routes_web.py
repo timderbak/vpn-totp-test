@@ -101,15 +101,29 @@ def totp_submit(
         return RedirectResponse("/login", status_code=303)
     admin_id = int(pending)
     ip = _ip(request)
+    # Brute-force protection: enforce per-IP and per-admin limits on TOTP step
+    # so an attacker with the password cannot grind the second factor.
+    try:
+        check_rate_limit(conn, action="login.totp.fail", window_secs=900,
+                         max_count=5, ip=ip)
+        check_rate_limit(conn, action="login.totp.fail", window_secs=900,
+                         max_count=10, target_user=str(admin_id))
+    except RateLimited as e:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            headers={"Retry-After": str(e.retry_after)})
     try:
         verify_admin_totp(conn, admin_id=admin_id, code=code)
     except (AuthFailed, TOTPRequired):
         write_audit(conn, actor_type="admin", actor_id=admin_id,
-                    action="login.totp.fail", target_user=None, ip=ip,
+                    action="login.totp.fail", target_user=str(admin_id), ip=ip,
                     user_agent=request.headers.get("user-agent"), result="fail")
-        return templates.TemplateResponse(
+        # Drop the pending cookie so the attacker has to re-pass the (rate-limited)
+        # password step for every TOTP guess attempt.
+        resp = templates.TemplateResponse(
             request, "login_totp.html", {"error": "Invalid code"}, status_code=401,
         )
+        resp.delete_cookie(PENDING_COOKIE, path="/")
+        return resp
     sid = create_session(conn, admin_id=admin_id, ip=ip,
                          user_agent=request.headers.get("user-agent"))
     write_audit(conn, actor_type="admin", actor_id=admin_id,

@@ -59,3 +59,23 @@ def test_verify_password_when_no_totp_yet_signals_required(conn):
     admin = verify_password(conn, username="admin1", password="pw")
     with pytest.raises(TOTPRequired):
         verify_admin_totp(conn, admin_id=admin.id, code="123456")
+
+
+def test_verify_totp_rejects_replay_same_code(conn):
+    h = bcrypt.using(rounds=4).hash("pw")
+    bootstrap_admin_if_needed(conn, username="admin1", password_hash=h)
+    secret = "JBSWY3DPEHPK3PXP"
+    set_admin_totp(conn, admin_id=1, secret=secret)
+    code = pyotp.TOTP(secret).now()
+    verify_admin_totp(conn, admin_id=1, code=code)          # first use: ok
+    with pytest.raises(AuthFailed):                          # replay: rejected
+        verify_admin_totp(conn, admin_id=1, code=code)
+
+
+def test_verify_totp_rejects_malformed_code(conn):
+    h = bcrypt.using(rounds=4).hash("pw")
+    bootstrap_admin_if_needed(conn, username="admin1", password_hash=h)
+    set_admin_totp(conn, admin_id=1, secret="JBSWY3DPEHPK3PXP")
+    for bad in ("", "abcdef", "12345", "1234567", "12 456"):
+        with pytest.raises(AuthFailed):
+            verify_admin_totp(conn, admin_id=1, code=bad)
