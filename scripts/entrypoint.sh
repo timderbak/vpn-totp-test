@@ -50,6 +50,9 @@ EOF
 cn = "vpn.local"
 organization = "ocserv-lab"
 expiration_days = 3650
+dns_name = "vpn.local"
+dns_name = "localhost"
+ip_address = "127.0.0.1"
 signing_key
 encryption_key
 tls_www_server
