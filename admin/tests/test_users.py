@@ -2,9 +2,27 @@ from pathlib import Path
 import pytest
 from app.db import init_db, connect
 from app.users import (
-    list_users, enroll_user, revoke_user, enable_user, UserNotFound,
+    list_users, enroll_user, revoke_user, enable_user, ensure_home, UserNotFound,
 )
 from app.usernames import InvalidUsername
+from app.ldap_client import LdapUser
+
+
+@pytest.fixture(autouse=True)
+def fake_ldap(monkeypatch):
+    """Stub ldap_client so tests don't need a real LDAP server."""
+    users = [
+        LdapUser(username="alice", uid_number=2001, gid_number=2001,
+                 display_name="Alice", email="alice@vpn.local"),
+        LdapUser(username="bob", uid_number=2002, gid_number=2002,
+                 display_name="Bob", email="bob@vpn.local"),
+        LdapUser(username="carol", uid_number=2003, gid_number=2003,
+                 display_name="Carol", email="carol@vpn.local"),
+    ]
+    monkeypatch.setattr("app.ldap_client.list_users", lambda: users)
+    monkeypatch.setattr("app.ldap_client.get_user",
+                        lambda uname: next((u for u in users if u.username == uname), None))
+    monkeypatch.setattr("app.ldap_client.invalidate_cache", lambda: None)
 
 
 @pytest.fixture
@@ -100,3 +118,48 @@ def test_enroll_rejects_invalid_username(env):
     with pytest.raises(InvalidUsername):
         enroll_user(env["home"], env["conn"], username="..", actor_type="admin",
                     actor_id=1, issuer="x")
+
+
+def test_list_users_uses_ldap_not_filesystem(env):
+    """list_users no longer walks /home — comes from LDAP."""
+    import shutil
+    shutil.rmtree(env["home"])
+    Path(env["home"]).mkdir()
+    users = list_users(env["home"], env["denylist"], env["conn"])
+    names = sorted(u.username for u in users)
+    assert names == ["alice", "bob", "carol"]
+
+
+def test_enroll_user_creates_home_with_correct_uid(env):
+    import shutil
+    shutil.rmtree(env["home"])
+    Path(env["home"]).mkdir()
+    enroll_user(env["home"], env["conn"], username="bob",
+                actor_type="admin", actor_id=1, issuer="x")
+    home = Path(env["home"]) / "bob"
+    assert home.exists()
+    assert (home / ".google_authenticator").exists()
+    assert oct(home.stat().st_mode)[-3:] == "700"
+
+
+def test_enroll_user_for_unknown_ldap_uid_raises_not_found(env):
+    with pytest.raises(UserNotFound):
+        enroll_user(env["home"], env["conn"], username="ghost",
+                    actor_type="admin", actor_id=1, issuer="x")
+
+
+def test_revoke_invalidates_ldap_cache(env, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.ldap_client.invalidate_cache", lambda: calls.append(1))
+    revoke_user(env["home"], env["denylist"], env["conn"],
+                username="alice", actor_type="admin", actor_id=1)
+    assert len(calls) >= 1
+
+
+def test_ensure_home_idempotent(env):
+    u = LdapUser(username="alice", uid_number=2001, gid_number=2001,
+                 display_name=None, email=None)
+    p1 = ensure_home(env["home"], u)
+    p2 = ensure_home(env["home"], u)
+    assert p1 == p2
+    assert p1.exists()

@@ -11,6 +11,8 @@ from app.totp import (
     generate_enrollment,
 )
 from app.usernames import InvalidUsername, is_valid_username, safe_home_path
+from app import ldap_client
+from app.ldap_client import LdapUser
 
 
 class UserNotFound(LookupError):
@@ -68,16 +70,15 @@ def _with_denylist_lock(path: str, fn):
 
 
 def list_users(home_dir: str, denylist_path: str, conn: sqlite3.Connection) -> list[UserListEntry]:
+    """List VPN users from LDAP, decorated with TOTP/denylist/journal state."""
     home = Path(home_dir)
     denied = set(_read_denylist(denylist_path))
     entries: list[UserListEntry] = []
-    for child in sorted(home.iterdir()):
-        if not child.is_dir():
-            continue
-        name = child.name
+    for ldap_user in ldap_client.list_users():
+        name = ldap_user.username
         if not is_valid_username(name):
             continue
-        ga = child / ".google_authenticator"
+        ga = home / name / ".google_authenticator"
         last_row = conn.execute(
             "SELECT ts FROM enrollments WHERE username=? ORDER BY ts DESC LIMIT 1", (name,),
         ).fetchone()
@@ -90,13 +91,29 @@ def list_users(home_dir: str, denylist_path: str, conn: sqlite3.Connection) -> l
     return entries
 
 
+def ensure_home(home_dir: str, ldap_user: LdapUser) -> Path:
+    """Create /home/<u>/ with chown to LDAP uid/gid + mode 0700 if missing."""
+    home = safe_home_path(home_dir, ldap_user.username)
+    if not home.exists():
+        home.mkdir(parents=True)
+        try:
+            os.chown(home, ldap_user.uid_number, ldap_user.gid_number)
+        except PermissionError:
+            pass  # running non-root in tests
+        os.chmod(home, 0o700)
+    return home
+
+
 def enroll_user(
     home_dir: str, conn: sqlite3.Connection, *,
     username: str, actor_type: str, actor_id: int, issuer: str,
 ) -> EnrollResult:
-    home_path = safe_home_path(home_dir, username)  # raises InvalidUsername
-    if not home_path.exists():
+    if not is_valid_username(username):
+        raise InvalidUsername(username)
+    ldap_user = ldap_client.get_user(username)
+    if ldap_user is None:
         raise UserNotFound(username)
+    home_path = ensure_home(home_dir, ldap_user)
 
     had_secret = (home_path / ".google_authenticator").exists()
     enrollment = generate_enrollment(username=username, issuer=issuer)
@@ -108,11 +125,8 @@ def enroll_user(
     os.chmod(tmp, 0o600)
     os.replace(tmp, ga)
     try:
-        # match real google-authenticator semantics: owned by user
-        stat = home_path.stat()
-        os.chown(ga, stat.st_uid, stat.st_gid)
+        os.chown(ga, ldap_user.uid_number, ldap_user.gid_number)
     except PermissionError:
-        # running as non-root in tests: skip
         pass
 
     fingerprint = hashlib.sha256(enrollment.secret.encode()).hexdigest()[:16]
@@ -130,9 +144,9 @@ def revoke_user(
     home_dir: str, denylist_path: str, conn: sqlite3.Connection, *,
     username: str, actor_type: str, actor_id: int,
 ) -> None:
+    if not is_valid_username(username):
+        raise InvalidUsername(username)
     home_path = safe_home_path(home_dir, username)
-    if not home_path.exists():
-        raise UserNotFound(username)
 
     def _do():
         names = _read_denylist(denylist_path)
@@ -149,6 +163,7 @@ def revoke_user(
         (username, "revoked", actor_type, actor_id,
          datetime.now(timezone.utc).isoformat(timespec="seconds")),
     )
+    ldap_client.invalidate_cache()
 
 
 def enable_user(
@@ -170,3 +185,4 @@ def enable_user(
         (username, "enabled", actor_type, actor_id,
          datetime.now(timezone.utc).isoformat(timespec="seconds")),
     )
+    ldap_client.invalidate_cache()
