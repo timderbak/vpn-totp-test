@@ -43,12 +43,17 @@ services:
       - "4443:443/udp"
 
     env_file:
-      - users.env
+      - .env
 
     volumes:
       - ocserv-ssl:/etc/ocserv/ssl
       - ocserv-home:/home
       - ocserv-control:/etc/ocserv/control
+      - ./ocserv-ldap/ldap.conf.tmpl:/etc/ldap/ldap.conf.tmpl:ro
+
+    depends_on:
+      ldap:
+        condition: service_healthy
 
     restart: unless-stopped
 

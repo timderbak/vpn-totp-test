@@ -1,35 +1,15 @@
-# PAM stack for ocserv. Two prompts, both required.
-#
-# WHY two prompts (not one combined "password+code") for ocserv specifically:
-#
-#   forward_pass / use_first_pass work in shell-style PAM consumers (login,
-#   sshd) that hand the cached PAM_AUTHTOK between modules silently. ocserv
-#   uses PAM in *challenge-response* mode: every pam_*.so module that opens a
-#   PAM conversation becomes a separate `Challenge` to the AnyConnect client.
-#   Setting forward_pass there is harmless but does nothing — the client still
-#   sees N prompts.
-#
-# Order matters here for client UX:
-#   1. pam_unix.so first        → shown to the client as plain "Password:".
-#   2. pam_google_authenticator → shown as "Verification code:".
-#
-# If you put the TOTP module first, openconnect CLI heuristically detects a
-# "secondary password" challenge whose hint contains "verification code" and
-# tries to auto-fill it from its own software token slot — which we don't
-# populate. Result: the prompt is invisibly skipped and PAM gets an empty
-# code → auth fails. Putting pam_unix first dodges this, because openconnect
-# always interactively prompts on the very first password challenge.
-#
-# Both `required` → both factors must succeed. Even on TOTP failure pam_unix
-# still ran first, so timing doesn't reveal which factor failed.
+# 1. Denylist managed by admin panel (shared volume ocserv-control).
+auth requisite pam_listfile.so onerr=succeed item=user sense=deny \
+     file=/etc/ocserv/control/disabled-users
 
-# Denylist managed by admin panel. If username is listed here, auth fails immediately.
-# onerr=succeed → if file is missing/unreadable, fall through to next rule (fail-open
-# behavior is acceptable here because the file is created by entrypoint at startup).
-auth requisite pam_listfile.so onerr=succeed item=user sense=deny file=/etc/ocserv/control/disabled-users
+# 2. Password via LDAP. pam_ldap reads /etc/ldap/ldap.conf.
+auth required pam_ldap.so
 
-auth       required     pam_unix.so
-auth       required     pam_google_authenticator.so
+# 3. Second factor — TOTP. File in /home/<u>/.google_authenticator.
+auth required pam_google_authenticator.so debug
 
-account    required     pam_unix.so
-session    required     pam_unix.so
+# Account-stage: pam_ldap enforces membership in pam_groupdn (vpn-users).
+account required pam_ldap.so
+
+# Session: ocserv never spawns a shell — pam_permit suffices.
+session required pam_permit.so

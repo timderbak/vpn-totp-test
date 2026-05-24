@@ -2,7 +2,7 @@
 # Container entrypoint.
 # Idempotent: safe to run on every restart.
 #  1. Generate self-signed CA + server cert if not already on the ssl volume.
-#  2. Create the lab users defined in users.env (if missing).
+#  2. Render /etc/ldap/ldap.conf from template, wait for LDAP to come up.
 #  3. Optionally set up NAT for the 192.168.99.0/24 client pool.
 #  4. Exec ocserv in foreground.
 
@@ -69,35 +69,24 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Lab users from users.env.
-# Format:   LAB_USERS="alice:alice-pass-123 bob:bob-pass-123"
-# Space-separated entries, colon-separated user:password.
-# Plaintext is intentional — this is a throwaway test stand. Don't do this in
-# prod (commented in users.env itself).
+# 2. LDAP wait + ldap.conf render
 # ---------------------------------------------------------------------------
-if [[ -z "${LAB_USERS:-}" ]]; then
-    log "ERROR: LAB_USERS not set (check users.env in compose)" >&2
-    exit 1
-fi
 
-for entry in $LAB_USERS; do
-    user="${entry%%:*}"
-    pass="${entry#*:}"
-    if [[ -z "$user" || -z "$pass" || "$user" == "$pass" ]]; then
-        log "WARN: skipping malformed user entry '$entry'"
-        continue
-    fi
+# Render pam_ldap config from template (the template uses envsubst variables,
+# so the bind password is never committed to git).
+envsubst < /etc/ldap/ldap.conf.tmpl > /etc/ldap/ldap.conf
+chmod 600 /etc/ldap/ldap.conf
 
-    if id "$user" &>/dev/null; then
-        log "user '$user' already exists — refreshing password"
-    else
-        log "creating user '$user'"
-        # /usr/sbin/nologin — VPN users don't need an interactive shell, but they
-        # do need a real home for ~/.google_authenticator. -m creates it if not
-        # already on the home volume.
-        useradd --create-home --shell /usr/sbin/nologin "$user"
+# Wait until LDAP is reachable (5 tries × 2s) so the first VPN connect
+# attempt doesn't race a cold LDAP container.
+for i in 1 2 3 4 5; do
+    if ldapsearch -x -H "$ADMIN_LDAP_URL" -b "$ADMIN_LDAP_BASE_DN" -s base \
+            -D "$ADMIN_LDAP_BIND_DN" -w "$ADMIN_LDAP_BIND_PASSWORD" >/dev/null 2>&1; then
+        log "LDAP reachable"
+        break
     fi
-    echo "${user}:${pass}" | chpasswd
+    log "waiting for LDAP ($i/5)..."
+    sleep 2
 done
 
 # ---------------------------------------------------------------------------
