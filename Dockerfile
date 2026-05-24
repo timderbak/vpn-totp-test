@@ -15,7 +15,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ocserv \
         libpam-google-authenticator \
-        libpam-ldap \
+        libpam-ldapd \
+        nslcd \
+        libnss-ldapd \
         ldap-utils \
         gettext-base \
         gnutls-bin \
@@ -28,6 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Strip the distro default PAM config — we override it below.
 RUN rm -f /etc/pam.d/ocserv
+
+# Tell NSS to consult ldap (via nslcd) for passwd/group/shadow lookups.
+# Without this, `getent passwd alice` returns nothing and PAM can't resolve
+# the user even after a successful pam_ldap bind.
+RUN sed -ri 's/^(passwd|group|shadow):\s+files\s*$/\1:         files ldap/' /etc/nsswitch.conf
 
 # Configs and scripts go in.
 COPY config/ocserv.conf /etc/ocserv/ocserv.conf

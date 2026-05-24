@@ -1,0 +1,29 @@
+# nslcd config — read by the nslcd daemon, which libpam-ldapd's
+# pam_ldap.so talks to over a UNIX socket. Rendered from envsubst at
+# container start; bind password substituted from env, never committed.
+
+uid nslcd
+gid nslcd
+
+uri ${ADMIN_LDAP_URL}
+base ${ADMIN_LDAP_BASE_DN}
+
+binddn ${ADMIN_LDAP_BIND_DN}
+bindpw ${ADMIN_LDAP_BIND_PASSWORD}
+
+# Where to find user and group entries.
+base passwd ${ADMIN_LDAP_USER_OU}
+base group ou=groups,${ADMIN_LDAP_BASE_DN}
+
+# Restrict VPN access at the PAM-account stage: only members of
+# cn=vpn-users can log in. Default OpenLDAP doesn't expose the virtual
+# `memberOf` attribute, so we search the group for memberUid instead.
+pam_authz_search (&(objectClass=posixGroup)(cn=vpn-users)(memberUid=$username))
+
+# Fail-closed timeouts.
+bind_timelimit ${ADMIN_LDAP_TIMEOUT}
+timelimit ${ADMIN_LDAP_TIMEOUT}
+idle_timelimit 10
+
+# No TLS for the lab.
+ssl off

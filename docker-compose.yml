@@ -49,7 +49,7 @@ services:
       - ocserv-ssl:/etc/ocserv/ssl
       - ocserv-home:/home
       - ocserv-control:/etc/ocserv/control
-      - ./ocserv-ldap/ldap.conf.tmpl:/etc/ldap/ldap.conf.tmpl:ro
+      - ./ocserv-ldap/nslcd.conf.tmpl:/etc/nslcd.conf.tmpl:ro
 
     depends_on:
       ldap:

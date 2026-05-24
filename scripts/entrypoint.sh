@@ -69,13 +69,14 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. LDAP wait + ldap.conf render
+# 2. LDAP wait + nslcd render + nslcd start
 # ---------------------------------------------------------------------------
 
-# Render pam_ldap config from template (the template uses envsubst variables,
-# so the bind password is never committed to git).
-envsubst < /etc/ldap/ldap.conf.tmpl > /etc/ldap/ldap.conf
-chmod 600 /etc/ldap/ldap.conf
+# Render nslcd config from template (envsubst pulls bind password from env,
+# so the password is never committed to git).
+envsubst < /etc/nslcd.conf.tmpl > /etc/nslcd.conf
+chmod 600 /etc/nslcd.conf
+chown root:nslcd /etc/nslcd.conf 2>/dev/null || true
 
 # Wait until LDAP is reachable (5 tries × 2s) so the first VPN connect
 # attempt doesn't race a cold LDAP container.
@@ -87,6 +88,22 @@ for i in 1 2 3 4 5; do
     fi
     log "waiting for LDAP ($i/5)..."
     sleep 2
+done
+
+# Start nslcd daemon in the background. libpam-ldapd's pam_ldap.so talks to
+# it over a UNIX socket — without nslcd running, every PAM auth fails.
+log "starting nslcd"
+mkdir -p /var/run/nslcd
+chown nslcd:nslcd /var/run/nslcd
+nslcd
+# Give it a moment to bind + accept connections
+for i in 1 2 3 4 5; do
+    if getent passwd alice >/dev/null 2>&1; then
+        log "nslcd serving LDAP users (getent passwd alice ok)"
+        break
+    fi
+    log "waiting for nslcd ($i/5)..."
+    sleep 1
 done
 
 # ---------------------------------------------------------------------------
