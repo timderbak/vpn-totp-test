@@ -1,0 +1,7 @@
+dn: ou=users,dc=vpn,dc=local
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,dc=vpn,dc=local
+objectClass: organizationalUnit
+ou: groups

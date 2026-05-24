@@ -1,0 +1,25 @@
+dn: uid=alice,ou=users,dc=vpn,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: alice
+cn: Alice Liddell
+sn: Liddell
+uidNumber: 2001
+gidNumber: 2001
+homeDirectory: /home/alice
+loginShell: /bin/bash
+mail: alice@vpn.local
+userPassword: {SSHA}rDj50BoWvFffF0VXp28bhPz3x/TQUb2z
+
+dn: uid=bob,ou=users,dc=vpn,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: bob
+cn: Bob Builder
+sn: Builder
+uidNumber: 2002
+gidNumber: 2002
+homeDirectory: /home/bob
+loginShell: /bin/bash
+mail: bob@vpn.local
+userPassword: {SSHA}rDj50BoWvFffF0VXp28bhPz3x/TQUb2z

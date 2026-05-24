@@ -1,4 +1,30 @@
 services:
+  ldap:
+    image: osixia/openldap:1.5.0
+    container_name: ocserv-ldap
+    hostname: ldap
+    environment:
+      LDAP_ORGANISATION: "VPN Lab"
+      LDAP_DOMAIN: vpn.local
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+      LDAP_CONFIG_PASSWORD: ${LDAP_CONFIG_PASSWORD}
+      LDAP_RFC2307BIS_SCHEMA: "false"
+      LDAP_TLS: "false"
+      LDAP_READONLY_USER: "true"
+      LDAP_READONLY_USER_USERNAME: admin-readonly
+      LDAP_READONLY_USER_PASSWORD: ${ADMIN_LDAP_BIND_PASSWORD}
+      LDAP_SEED_INTERNAL_LDIF_PATH: /opt/ldap-seed
+    volumes:
+      - ldap-data:/var/lib/ldap
+      - ldap-config:/etc/ldap/slapd.d
+      - ./ldap/bootstrap:/opt/ldap-seed
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost -D cn=admin,dc=vpn,dc=local -w \"$$LDAP_ADMIN_PASSWORD\" -b dc=vpn,dc=local -s base >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   ocserv:
     build:
       context: .
@@ -57,3 +83,5 @@ volumes:
   ocserv-control:
   admin-data:
   admin-ssl:
+  ldap-data:
+  ldap-config:

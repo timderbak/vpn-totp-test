@@ -1,0 +1,6 @@
+dn: cn=vpn-users,ou=groups,dc=vpn,dc=local
+objectClass: posixGroup
+cn: vpn-users
+gidNumber: 3000
+memberUid: alice
+memberUid: bob
