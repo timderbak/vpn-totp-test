@@ -19,15 +19,34 @@ LDAP/IdP, хэши, секреты в vault и так далее.
 
 ```
 .
-├── docker-compose.yml      # один сервис ocserv, 4443:443 tcp+udp
-├── Dockerfile              # debian:bookworm-slim + ocserv + libpam-google-authenticator
+├── docker-compose.yml      # ocserv + ldap + admin
+├── Dockerfile              # debian:bookworm-slim + ocserv + libpam-ldap + libpam-google-authenticator
 ├── config/ocserv.conf      # конфиг ocserv (с подробными комментариями)
-├── pam/ocserv              # PAM-стек: пароль + TOTP, оба required
+├── pam/ocserv              # PAM-стек: denylist + LDAP-пароль + TOTP
+├── ocserv-ldap/ldap.conf.tmpl  # envsubst-шаблон для pam_ldap (рендерится в entrypoint)
+├── ldap/bootstrap/*.ldif   # seed-юзеры alice/bob и группа vpn-users
 ├── scripts/
-│   ├── entrypoint.sh       # генерит серты, создаёт юзеров, стартует ocserv
-│   └── totp-enroll         # `docker exec ocserv totp-enroll <user>` — QR в терминал
-└── users.env               # тестовые юзеры/пароли (commit-friendly, см. ниже)
+│   ├── entrypoint.sh       # генерит серты, ждёт LDAP, рендерит ldap.conf, стартует ocserv
+│   └── totp-enroll         # legacy CLI, больше не нужен — TOTP выпускает админка
+└── admin/                  # FastAPI админка (LDAP-клиент, выпуск TOTP, denylist, аудит)
 ```
+
+---
+
+## Источник юзеров: LDAP
+
+Юзеры **не** живут в `/etc/passwd` контейнера и **не** заводятся через `users.env` (этот файл удалён). Источник истины — OpenLDAP-контейнер, поднимаемый тем же `docker compose`.
+
+Layout:
+
+```
+dc=vpn,dc=local
+├── ou=users (alice, bob)
+└── ou=groups
+    └── cn=vpn-users (только эти юзеры могут в VPN)
+```
+
+Чтобы добавить нового юзера — см. [`ldap/README.md`](./ldap/README.md).
 
 ---
 
@@ -47,19 +66,13 @@ docker compose logs ocserv | tail -20
 # должно быть видно: "starting ocserv on tcp/udp 443 (mapped to host 4443)"
 ```
 
-### 2. Сгенерировать TOTP для пользователя
+### 2. Выпустить TOTP
 
-```bash
-docker exec -it ocserv totp-enroll alice
-```
+Открой админку https://localhost:8443/, залогинься (`admin1` / см. `.env`), на дашборде нажми **Issue** напротив alice. QR-код покажется один раз — отсканируй любым TOTP-приложением (Google Authenticator, Authy, 1Password, Bitwarden).
 
-В терминале появится:
-- **QR-код** Unicode-блоками — отсканируй любым TOTP-приложением (Google
-  Authenticator, Authy, 1Password, Яндекс.Ключ, Bitwarden — всё одинаково).
-- **Base32-секрет** — на случай если QR не сканируется, можно ввести вручную.
-- **Emergency scratch codes** — одноразовые, на случай если телефон потеряется.
+Файл секрета админка кладёт в shared volume `/home/alice/.google_authenticator` (home-папка создаётся автоматически с правильным uid/gid из LDAP).
 
-Файл секрета лежит у пользователя в `/home/alice/.google_authenticator`.
+> Старый CLI `docker exec -it ocserv totp-enroll alice` больше не работает — юзеры теперь LDAP-ные и home-папка появляется в момент выпуска TOTP через админку.
 
 ### 3. Подключиться VPN-клиентом
 
