@@ -5,6 +5,21 @@ from app.db import init_db, connect
 from app.config import get_settings
 from app.deps import get_conn
 from app.tokens import create_token
+from app.ldap_client import LdapUser
+
+
+@pytest.fixture(autouse=True)
+def fake_ldap(monkeypatch):
+    users = [
+        LdapUser(username="alice", uid_number=2001, gid_number=2001,
+                 display_name="Alice", email="alice@vpn.local"),
+        LdapUser(username="bob", uid_number=2002, gid_number=2002,
+                 display_name="Bob", email="bob@vpn.local"),
+    ]
+    monkeypatch.setattr("app.ldap_client.list_users", lambda: users)
+    monkeypatch.setattr("app.ldap_client.get_user",
+                        lambda u: next((x for x in users if x.username == u), None))
+    monkeypatch.setattr("app.ldap_client.invalidate_cache", lambda: None)
 
 
 @pytest.fixture
@@ -87,3 +102,15 @@ def test_revoke_then_enable(env):
     assert "alice" in Path(env["denylist"]).read_text()
     client.post("/api/v1/users/alice/enable", headers={"Authorization": f"Bearer {tok}"})
     assert "alice" not in Path(env["denylist"]).read_text()
+
+
+def test_api_list_users_returns_503_when_ldap_down(env, monkeypatch):
+    from app.ldap_client import LdapUnavailable
+    def _raise():
+        raise LdapUnavailable("down")
+    monkeypatch.setattr("app.ldap_client.list_users", _raise)
+    client = TestClient(app, raise_server_exceptions=False)
+    tok = _make_token(env["conn"], ["read"])
+    r = client.get("/api/v1/users", headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 503
+    assert r.json()["error"] == "ldap_unavailable"
