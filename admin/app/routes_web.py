@@ -15,6 +15,7 @@ from app.audit import write_audit
 from app.sessions import create_session, destroy_session
 from app.totp import build_qr_png_base64, generate_enrollment, Enrollment
 from app.ratelimit import check_rate_limit, RateLimited
+from app import pending as _pending
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -69,7 +70,8 @@ def login_submit(
                 action="login.password.ok", target_user=None, ip=ip,
                 user_agent=request.headers.get("user-agent"), result="ok")
     resp = RedirectResponse("/login/totp", status_code=303)
-    resp.set_cookie(PENDING_COOKIE, str(admin.id),
+    signed = _pending.mint(admin.id, stage=_pending.STAGE_PASSWORD_OK, ttl_seconds=300)
+    resp.set_cookie(PENDING_COOKIE, signed,
                     httponly=True, secure=True, samesite="strict",
                     path="/", max_age=300)
     return resp
@@ -81,9 +83,11 @@ def totp_page(
     pending: Annotated[str | None, Cookie(alias=PENDING_COOKIE)] = None,
     conn=Depends(get_conn),
 ):
-    if not pending or not pending.isdigit():
+    try:
+        admin_id = _pending.verify(pending, expected_stage=_pending.STAGE_PASSWORD_OK)
+    except _pending.PendingInvalid:
         return RedirectResponse("/login", status_code=303)
-    row = conn.execute("SELECT totp_secret FROM admins WHERE id=?", (int(pending),)).fetchone()
+    row = conn.execute("SELECT totp_secret FROM admins WHERE id=?", (admin_id,)).fetchone()
     if row is None:
         return RedirectResponse("/login", status_code=303)
     if row["totp_secret"] is None:
@@ -97,9 +101,10 @@ def totp_submit(
     pending: Annotated[str | None, Cookie(alias=PENDING_COOKIE)] = None,
     conn=Depends(get_conn),
 ):
-    if not pending or not pending.isdigit():
+    try:
+        admin_id = _pending.verify(pending, expected_stage=_pending.STAGE_PASSWORD_OK)
+    except _pending.PendingInvalid:
         return RedirectResponse("/login", status_code=303)
-    admin_id = int(pending)
     ip = _ip(request)
     # Brute-force protection: enforce per-IP and per-admin limits on TOTP step
     # so an attacker with the password cannot grind the second factor.
@@ -141,15 +146,19 @@ def enroll_totp_page(
     request: Request,
     pending: Annotated[str | None, Cookie(alias=PENDING_COOKIE)] = None,
 ):
-    if not pending or not pending.isdigit():
+    try:
+        admin_id = _pending.verify(pending, expected_stage=_pending.STAGE_PASSWORD_OK)
+    except _pending.PendingInvalid:
         return RedirectResponse("/login", status_code=303)
-    e = generate_enrollment(username=f"admin#{pending}", issuer="ocserv-admin")
+    e = generate_enrollment(username=f"admin#{admin_id}", issuer="ocserv-admin")
     response = templates.TemplateResponse(
         request, "enroll_admin_totp.html",
         {"qr_b64": build_qr_png_base64(e), "secret": e.secret},
     )
-    # store proposed secret in cookie (signed isn't needed since cookie itself is __Host-)
-    response.set_cookie(ENROLL_SECRET_COOKIE, e.secret,
+    # The enroll-secret cookie is bound to this admin_id + enroll stage via HMAC
+    # so an attacker cannot mint a cookie pointing at a different admin.
+    enroll_payload = _pending.mint(admin_id, stage=_pending.STAGE_ENROLL_TOTP, ttl_seconds=600)
+    response.set_cookie(ENROLL_SECRET_COOKIE, f"{enroll_payload}:{e.secret}",
                         httponly=True, secure=True, samesite="strict",
                         path="/", max_age=600)
     return response
@@ -162,12 +171,24 @@ def enroll_totp_submit(
     enroll_secret: Annotated[str | None, Cookie(alias=ENROLL_SECRET_COOKIE)] = None,
     conn=Depends(get_conn),
 ):
-    if not pending or not pending.isdigit() or not enroll_secret:
+    try:
+        admin_id = _pending.verify(pending, expected_stage=_pending.STAGE_PASSWORD_OK)
+    except _pending.PendingInvalid:
         return RedirectResponse("/login", status_code=303)
-    if not pyotp.TOTP(enroll_secret).verify(code, valid_window=1):
+    if not enroll_secret or ":" not in enroll_secret:
+        return RedirectResponse("/login", status_code=303)
+    enroll_token, secret = enroll_secret.split(":", 1)
+    try:
+        enroll_admin_id = _pending.verify(enroll_token, expected_stage=_pending.STAGE_ENROLL_TOTP)
+    except _pending.PendingInvalid:
+        return RedirectResponse("/login", status_code=303)
+    # Bind check: enroll cookie must be for the same admin who passed password.
+    if enroll_admin_id != admin_id:
+        return RedirectResponse("/login", status_code=303)
+    if not pyotp.TOTP(secret).verify(code, valid_window=1):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong code")
-    set_admin_totp(conn, admin_id=int(pending), secret=enroll_secret)
-    write_audit(conn, actor_type="admin", actor_id=int(pending),
+    set_admin_totp(conn, admin_id=admin_id, secret=secret)
+    write_audit(conn, actor_type="admin", actor_id=admin_id,
                 action="admin.totp.enrolled", target_user=None, ip=_ip(request),
                 user_agent=request.headers.get("user-agent"), result="ok")
     resp = RedirectResponse("/login/totp", status_code=303)
