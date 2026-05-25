@@ -8,7 +8,7 @@ from app.routes_web import router as web_router
 from app.deps import NeedsLogin
 from app.ldap_client import LdapUnavailable
 
-app = FastAPI(title="ocserv admin", docs_url=None, redoc_url=None)
+app = FastAPI(title="ocserv admin", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 app.include_router(api_router)

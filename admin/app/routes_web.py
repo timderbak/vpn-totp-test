@@ -175,6 +175,15 @@ def enroll_totp_submit(
         admin_id = _pending.verify(pending, expected_stage=_pending.STAGE_PASSWORD_OK)
     except _pending.PendingInvalid:
         return RedirectResponse("/login", status_code=303)
+    # Rate-limit TOTP enroll attempts (defence-in-depth — the HMAC cookies
+    # already block forged-pending PoCs, this caps brute-force on the secret
+    # cookie itself).
+    try:
+        check_rate_limit(conn, action="admin.totp.enroll.fail", window_secs=900,
+                         max_count=10, ip=_ip(request) or "0.0.0.0")
+    except RateLimited as e:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            headers={"Retry-After": str(e.retry_after)})
     if not enroll_secret or ":" not in enroll_secret:
         return RedirectResponse("/login", status_code=303)
     enroll_token, secret = enroll_secret.split(":", 1)
@@ -186,6 +195,9 @@ def enroll_totp_submit(
     if enroll_admin_id != admin_id:
         return RedirectResponse("/login", status_code=303)
     if not pyotp.TOTP(secret).verify(code, valid_window=1):
+        write_audit(conn, actor_type="admin", actor_id=admin_id,
+                    action="admin.totp.enroll.fail", target_user=None, ip=_ip(request),
+                    user_agent=request.headers.get("user-agent"), result="fail")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong code")
     set_admin_totp(conn, admin_id=admin_id, secret=secret)
     write_audit(conn, actor_type="admin", actor_id=admin_id,
