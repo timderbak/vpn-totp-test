@@ -15,20 +15,36 @@ LDAP/IdP, хэши, секреты в vault и так далее.
 
 ---
 
+## 📚 Документация
+
+| Документ | Для кого / зачем |
+|---|---|
+| [docs/production-install.md](./docs/production-install.md) | Установка на боевой сервер (общая инструкция, для сетевиков) |
+| [docs/my-deploy-checklist.md](./docs/my-deploy-checklist.md) | Личная пошаговая шпаргалка для разворачивания на готовом ocserv+LDAP сервере |
+| [docs/architecture.md](./docs/architecture.md) | Общая архитектура с mermaid-диаграммами (контейнеры, потоки данных, flows) |
+| [docs/ldap-flow.md](./docs/ldap-flow.md) | Пошагово как заводится юзер и выпускается TOTP |
+| [docs/ocserv-explained.md](./docs/ocserv-explained.md) | Построчный разбор `ocserv.conf` — если будете двигать конфиг |
+| [docs/pam-deep-dive.md](./docs/pam-deep-dive.md) | Глубокий разбор PAM-стека + nslcd + troubleshooting |
+| [docs/security-review-2026-05-25.md](./docs/security-review-2026-05-25.md) | Security-аудит + что закрыто / что осталось как tech-debt |
+| [ldap/README.md](./ldap/README.md) | Как добавить нового VPN-юзера в LDAP |
+| [docs/superpowers/specs/](./docs/superpowers/specs/) | Design-spec'и: админка и LDAP-интеграция |
+
+---
+
 ## Что внутри
 
 ```
 .
-├── docker-compose.yml      # ocserv + ldap + admin
-├── Dockerfile              # debian:bookworm-slim + ocserv + libpam-ldap + libpam-google-authenticator
-├── config/ocserv.conf      # конфиг ocserv (с подробными комментариями)
-├── pam/ocserv              # PAM-стек: denylist + LDAP-пароль + TOTP
-├── ocserv-ldap/ldap.conf.tmpl  # envsubst-шаблон для pam_ldap (рендерится в entrypoint)
-├── ldap/bootstrap/*.ldif   # seed-юзеры alice/bob и группа vpn-users
+├── docker-compose.yml          # ocserv + ldap + admin
+├── Dockerfile                  # debian:bookworm-slim + ocserv + libpam-ldapd + nslcd + libpam-google-authenticator
+├── config/ocserv.conf          # конфиг ocserv (с подробными комментариями)
+├── pam/ocserv                  # PAM-стек: denylist + pam_ldap + TOTP
+├── ocserv-ldap/nslcd.conf.tmpl # envsubst-шаблон для nslcd (читается pam_ldap.so из libpam-ldapd)
+├── ldap/bootstrap/*.ldif       # seed-юзеры alice/bob и группа vpn-users
 ├── scripts/
-│   ├── entrypoint.sh       # генерит серты, ждёт LDAP, рендерит ldap.conf, стартует ocserv
-│   └── totp-enroll         # legacy CLI, больше не нужен — TOTP выпускает админка
-└── admin/                  # FastAPI админка (LDAP-клиент, выпуск TOTP, denylist, аудит)
+│   ├── entrypoint.sh           # генерит серты, ждёт LDAP, рендерит nslcd.conf, стартует nslcd+ocserv
+│   └── totp-enroll             # legacy CLI, больше не нужен — TOTP выпускает админка
+└── admin/                      # FastAPI админка (LDAP-клиент, выпуск TOTP, denylist, аудит)
 ```
 
 ---
