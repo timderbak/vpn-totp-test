@@ -187,7 +187,27 @@ docker compose -f docker-compose.prod.yml logs admin | tail -20
 2. Кнопка **Issue** напротив юзера — генерит TOTP, пишет `/home/<u>/.google_authenticator`, показывает QR один раз
 3. Кнопка **Revoke** — добавляет в `disabled-users` + удаляет TOTP-файл
 
-### 3.6 API-токены для интеграций
+### 3.6 Несколько админов
+
+Bootstrap-юзер из `.env` — только первый. Дальше админы добавляются CLI:
+
+```bash
+# добавить второго админа (запросит пароль интерактивно)
+docker compose -f docker-compose.prod.yml exec admin python -m app.cli add-admin admin2
+
+# список
+docker compose -f docker-compose.prod.yml exec admin python -m app.cli list-admins
+
+# удалить
+docker compose -f docker-compose.prod.yml exec admin python -m app.cli remove-admin admin2
+
+# сбросить TOTP админа (потерял телефон) → переэнроллится при следующем входе
+docker compose -f docker-compose.prod.yml exec admin python -m app.cli reset-totp admin2
+```
+
+Новый админ при первом логине проходит ту же ТOTP-enroll-страницу что и bootstrap-юзер. Все админы равноправны (нет ролей).
+
+### 3.7 API-токены для интеграций
 
 Если внешние системы (CI, Ansible, тикетная система) должны управлять выпуском — в админке вкладка **API Tokens** → создать токен со scope `read,enroll,revoke`. Plaintext показывается **один раз**. Использование:
 
